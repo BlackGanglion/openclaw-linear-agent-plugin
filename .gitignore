@@ -1,5 +1,6 @@
 cc-origin
-cc-docs
+cc-docs/*
+!cc-docs/design/
 .claude/settings.local.json
 
 # Auto Claude data directory
