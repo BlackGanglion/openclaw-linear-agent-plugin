@@ -1,72 +1,90 @@
 [中文](./README.zh-CN.md) | English
 
-# openclaw-linear-agent
+# linear-agent
 
-OpenClaw plugin — integrate Linear with OpenClaw Agent for automatic issue triage.
+Standalone server that integrates Linear with LLM for automatic issue triage.
 
-When a new issue is created in Linear, the plugin automatically collects context, runs an OpenClaw Agent for analysis, and writes triage results (priority, labels, assignee, etc.) back to Linear.
+When a new issue is created in Linear, the server automatically collects context, calls an LLM (via OpenAI-compatible API) for analysis, and writes triage results (priority, labels, assignee) back to Linear.
 
 ## Features
 
-- **Webhook Receiver**: Listen for Linear webhooks, verify signatures, and handle issue creation events
-- **Issue Auto-Triage**: Collect issue context → Agent analysis → auto-set priority / labels / assignee
-- **Agent Session** (planned): Support @mention agent in Linear for conversational interaction
+- **OAuth Authentication**: Linear OAuth 2.0 flow with automatic token refresh
+- **Webhook Receiver**: Listen for Linear webhooks, verify signatures via Linear SDK
+- **Issue Auto-Triage**: Collect issue context → LLM analysis → auto-set priority / labels / assignee
 
-## Installation
-
-OpenClaw loads `.ts` source directly — **no build step required**.
+## Quick Start
 
 ```bash
-git clone <repo-url> openclaw-linear-agent-plugin
-cd openclaw-linear-agent-plugin
+git clone <repo-url> linear-agent
+cd linear-agent
 npm install
-```
-
-Then install in OpenClaw via local path:
-
-```bash
-openclaw plugins install ./openclaw-linear-agent-plugin
+cp .env.example .env
+# Edit .env with your credentials
+npm run dev
 ```
 
 ## Configuration
 
-Add the plugin to your OpenClaw config with the following parameters:
+All configuration is via environment variables (`.env` file supported):
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `webhookSecret` | Yes | Linear webhook signing secret (HMAC-SHA256) |
-| `linearApiKey` | Yes | Linear API key |
-| `agentId` | Yes | Linear agent actor ID |
-| `defaultDir` | No | Default working directory for agent execution |
-
-See `.env.example` for environment variable reference.
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `LINEAR_WEBHOOK_SECRET` | Yes | Linear webhook signing secret (HMAC-SHA256) |
+| `LINEAR_CLIENT_ID` | Yes | Linear OAuth app client ID |
+| `LINEAR_CLIENT_SECRET` | Yes | Linear OAuth app client secret |
+| `LINEAR_REDIRECT_URI` | Yes | OAuth redirect URI (must match Linear app config) |
+| `PORT` | No | Server port (default: `3000`) |
+| `LLM_BASE_URL` | No | LLM API base URL (default: `https://api.moonshot.cn/v1`) |
+| `LLM_MODEL` | No | LLM model name (default: `kimi-k2.5`) |
+| `LLM_API_KEY` | Yes | LLM API key |
 
 ## Linear Setup
 
-1. Go to Linear Settings → API → Webhooks and create a webhook
-2. Set the URL to `https://<your-openclaw-host>/webhooks/linear`
-3. Select **Issues** events, copy the Signing Secret into the plugin's `webhookSecret`
-4. Create a Linear API Key and set it as `linearApiKey`
+1. Create a Linear OAuth app at Linear Settings → API → OAuth applications
+2. Set the callback URL to `https://<your-host>/oauth/callback`
+3. Create a webhook at Linear Settings → API → Webhooks
+4. Set the webhook URL to `https://<your-host>/webhooks/linear`
+5. Select **Issues** events, copy the Signing Secret to `LINEAR_WEBHOOK_SECRET`
+6. Start the server and visit `/oauth/authorize` to complete OAuth
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check |
+| `GET` | `/status` | Auth status and agent ID |
+| `GET` | `/oauth/authorize` | Start Linear OAuth flow |
+| `GET` | `/oauth/callback` | OAuth callback handler |
+| `POST` | `/webhooks/linear` | Linear webhook receiver |
 
 ## Project Structure
 
 ```
-index.ts                  # Plugin entry point, registers webhook routes and event handlers
+index.ts                    # Hono server entry point
 src/
-  types.ts                # Type definitions and config validation
-  webhook/handler.ts      # Webhook signature verification and event dispatch
-  issue/triage.ts         # Issue triage logic (context collection, prompt building, result parsing)
-  agent/linear-agent.ts   # OpenClaw Agent invocation wrapper
-  api/linear.ts           # Linear API client (for Agent Session)
-  api/oauth.ts            # OAuth utilities
-  session/manager.ts      # Agent Session state management
+  config.ts                 # Environment variable loading
+  logger.ts                 # File + console logger
+  api/oauth.ts              # OAuth 2.0 flow (authorize, token, refresh)
+  linear/client.ts          # Linear API client wrapper
+  triage/triage.ts          # Issue triage (context → LLM → apply)
+  webhook/handler.ts        # Webhook signature verification and event dispatch
+  webhook/logger-types.ts   # Logger interface
+prompts/
+  triage.md                 # Triage system prompt
 ```
+
+## Tech Stack
+
+- **[Hono](https://hono.dev/)** — HTTP server
+- **[@linear/sdk](https://developers.linear.app/docs/sdk)** — Linear API & webhook verification
+- **[@mariozechner/pi-ai](https://github.com/badlogic/pi-mono)** — LLM completion (OpenAI-compatible)
+- **TypeScript** + **tsx** — No build step required
 
 ## Development
 
 ```bash
-# Type check
-npx tsc --noEmit
+npm run dev        # Start with watch mode
+npm run typecheck  # Type check
 ```
 
 ## License

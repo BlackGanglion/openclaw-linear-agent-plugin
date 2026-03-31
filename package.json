@@ -1,19 +1,23 @@
 {
-  "name": "openclaw-linear-agent",
+  "name": "linear-agent",
   "version": "0.1.0",
   "type": "module",
-  "openclaw": {
-    "extensions": [
-      "./index.ts"
-    ]
+  "scripts": {
+    "dev": "tsx --watch index.ts",
+    "start": "tsx index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "@linear/sdk": "^80.0.0",
+    "@mariozechner/pi-ai": "^0.64.0",
+    "dotenv": "^16.5.0",
+    "hono": "^4.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "openclaw": "^2026.3.28",
     "prettier": "^3.8.1",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.0"
-  },
-  "dependencies": {
-    "@linear/sdk": "^80.0.0"
   }
 }

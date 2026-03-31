@@ -21,6 +21,7 @@ prompts/
 # Runtime data
 .data/
 
-# Test logs
+# Logs
+log/
 test/log/
 

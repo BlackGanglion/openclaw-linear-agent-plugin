@@ -1,7 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PluginLogger } from "../webhook/logger-types";
 
 const LINEAR_AUTHORIZE_URL = "https://linear.app/oauth/authorize";
@@ -215,99 +214,84 @@ export function getAuthorizationUrl(config: OAuthConfig): string {
   return `${LINEAR_AUTHORIZE_URL}?${params.toString()}`;
 }
 
-// --- OAuth callback HTTP handler ---
+// --- OAuth callback (framework-agnostic) ---
 
-export function createOAuthCallbackHandler(
+export type OAuthCallbackResult =
+  | { success: true; agentId: string; expiresAt?: string }
+  | { success: false; status: number; title: string; message: string };
+
+export async function handleOAuthCallback(
   config: OAuthConfig,
+  code: string,
+  state: string,
   logger: PluginLogger,
-): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    const url = new URL(
-      req.url ?? "/",
-      `http://${req.headers.host ?? "localhost"}`,
-    );
-    const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state");
-    const error = url.searchParams.get("error");
-
-    if (error) {
-      const desc = url.searchParams.get("error_description") ?? error;
-      logger.error(`OAuth error from Linear: ${desc}`);
-      res.writeHead(400, { "Content-Type": "text/html" });
-      res.end(`<h1>OAuth Error</h1><p>${desc}</p>`);
-      return;
-    }
-
-    if (!code || !state) {
-      res.writeHead(400, { "Content-Type": "text/html" });
-      res.end("<h1>Missing code or state parameter</h1>");
-      return;
-    }
-
-    // Validate state
-    if (!validateState(state, config.webhookSecret)) {
-      logger.error("OAuth state validation failed");
-      res.writeHead(403, { "Content-Type": "text/html" });
-      res.end("<h1>Invalid state parameter</h1>");
-      return;
-    }
-
-    // Exchange code for token
-    logger.info("Exchanging OAuth code for token...");
-    let payload: TokenResponse;
-    try {
-      payload = await exchangeCode(code, config);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error(`Token exchange failed: ${msg}`);
-      res.writeHead(500, { "Content-Type": "text/html" });
-      res.end(`<h1>Token Exchange Failed</h1><p>${msg}</p>`);
-      return;
-    }
-
-    if (payload.error || !payload.access_token) {
-      const desc =
-        payload.error_description ?? payload.error ?? "unknown error";
-      logger.error(`Token exchange error: ${desc}`);
-      res.writeHead(400, { "Content-Type": "text/html" });
-      res.end(`<h1>Token Exchange Error</h1><p>${desc}</p>`);
-      return;
-    }
-
-    // Resolve agent ID
-    let agentId = "";
-    try {
-      agentId = await resolveAgentId(payload.access_token);
-      logger.info(`Resolved agent ID: ${agentId}`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn(`Failed to resolve agent ID: ${msg}`);
-    }
-
-    // Save token
-    const now = new Date();
-    const tokenSet: TokenSet = {
-      accessToken: payload.access_token,
-      refreshToken: payload.refresh_token,
-      tokenType: payload.token_type,
-      scope: payload.scope,
-      expiresAt:
-        typeof payload.expires_in === "number"
-          ? new Date(now.getTime() + payload.expires_in * 1000).toISOString()
-          : undefined,
-      agentId,
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
+): Promise<OAuthCallbackResult> {
+  // Validate state
+  if (!validateState(state, config.webhookSecret)) {
+    logger.error("OAuth state validation failed");
+    return {
+      success: false,
+      status: 403,
+      title: "Invalid state parameter",
+      message: "State validation failed",
     };
-    saveTokenSet(config.tokenStorePath, tokenSet);
-    logger.info("OAuth tokens saved successfully");
+  }
 
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(`
-      <h1>Authorization Successful</h1>
-      <p>Agent ID: <code>${agentId}</code></p>
-      <p>Token expires: ${tokenSet.expiresAt ?? "unknown"}</p>
-      <p>You can close this page.</p>
-    `);
+  // Exchange code for token
+  logger.info("Exchanging OAuth code for token...");
+  let payload: TokenResponse;
+  try {
+    payload = await exchangeCode(code, config);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`Token exchange failed: ${msg}`);
+    return {
+      success: false,
+      status: 500,
+      title: "Token Exchange Failed",
+      message: msg,
+    };
+  }
+
+  if (payload.error || !payload.access_token) {
+    const desc =
+      payload.error_description ?? payload.error ?? "unknown error";
+    logger.error(`Token exchange error: ${desc}`);
+    return {
+      success: false,
+      status: 400,
+      title: "Token Exchange Error",
+      message: desc,
+    };
+  }
+
+  // Resolve agent ID
+  let agentId = "";
+  try {
+    agentId = await resolveAgentId(payload.access_token);
+    logger.info(`Resolved agent ID: ${agentId}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`Failed to resolve agent ID: ${msg}`);
+  }
+
+  // Save token
+  const now = new Date();
+  const tokenSet: TokenSet = {
+    accessToken: payload.access_token,
+    refreshToken: payload.refresh_token,
+    tokenType: payload.token_type,
+    scope: payload.scope,
+    expiresAt:
+      typeof payload.expires_in === "number"
+        ? new Date(now.getTime() + payload.expires_in * 1000).toISOString()
+        : undefined,
+    agentId,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
   };
+  saveTokenSet(config.tokenStorePath, tokenSet);
+  logger.info("OAuth tokens saved successfully");
+
+  return { success: true, agentId, expiresAt: tokenSet.expiresAt };
 }
