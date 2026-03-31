@@ -12,6 +12,9 @@ dist/
 # Dependencies
 node_modules/
 
+# Prompts (contains team-specific info, not committed)
+prompts/
+
 # Env
 .env
 

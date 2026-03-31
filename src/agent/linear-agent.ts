@@ -7,8 +7,7 @@
  * - 上下文干净：每次 triage 只包含 Linear issue 相关信息
  */
 
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -17,32 +16,13 @@ import type { PluginLogger } from "../webhook/logger-types";
 // Linear 专属 agentId，与其他渠道（tg/discord/cli）完全隔离
 const LINEAR_AGENT_ID = "linear";
 
-interface ExtensionAPI {
-  runEmbeddedPiAgent: (
-    params: Record<string, unknown>,
-  ) => Promise<EmbeddedAgentResult>;
-  abortEmbeddedPiRun: (sessionId: string) => void;
-}
-
 interface EmbeddedAgentResult {
-  result?: {
-    payloads?: Array<{ text?: string }>;
-  };
-  [key: string]: unknown;
+  payloads?: Array<{ text?: string }>;
+  meta: Record<string, unknown>;
 }
 
-let _extensionAPI: ExtensionAPI | null = null;
-
-async function getExtensionAPI(): Promise<ExtensionAPI> {
-  if (!_extensionAPI) {
-    const require = createRequire(import.meta.url);
-    const mainEntry = require.resolve("openclaw");
-    const openclawDir = dirname(dirname(mainEntry));
-    const apiPath = join(openclawDir, "dist", "extensionAPI.js");
-    _extensionAPI = (await import(apiPath)) as ExtensionAPI;
-  }
-  return _extensionAPI;
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RunEmbeddedPiAgentFn = (params: any) => Promise<EmbeddedAgentResult>;
 
 function resolveAgentDirs(): { agentDir: string; sessionsDir: string } {
   const agentDir = join(
@@ -70,6 +50,8 @@ export interface LinearAgentRunParams {
   workspaceDir?: string;
   /** 超时毫秒数 */
   timeoutMs?: number;
+  /** 宿主传入的 runEmbeddedPiAgent 函数 */
+  runEmbeddedPiAgent: RunEmbeddedPiAgentFn;
   logger: PluginLogger;
 }
 
@@ -92,10 +74,10 @@ export async function runLinearAgent(
     systemPrompt,
     workspaceDir,
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    runEmbeddedPiAgent,
     logger,
   } = params;
 
-  const ext = await getExtensionAPI();
   const { sessionsDir } = resolveAgentDirs();
   // 所有 Linear 任务共享同一个 session，信息可以互相参考
   const sessionId = "linear-shared";
@@ -107,7 +89,7 @@ export async function runLinearAgent(
   );
 
   try {
-    const result = await ext.runEmbeddedPiAgent({
+    const result = await runEmbeddedPiAgent({
       sessionId,
       sessionFile,
       workspaceDir: workspaceDir ?? process.cwd(),
@@ -134,7 +116,7 @@ export async function runLinearAgent(
 }
 
 function extractOutput(result: EmbeddedAgentResult): string {
-  const payloads = result.result?.payloads;
+  const payloads = result.payloads;
   if (!Array.isArray(payloads)) return "";
   return payloads
     .map((p) => (typeof p.text === "string" ? p.text : ""))

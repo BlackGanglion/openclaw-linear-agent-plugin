@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { LinearClient } from "@linear/sdk";
 import type { PluginLogger } from "../webhook/logger-types";
 
@@ -52,36 +55,20 @@ export interface IssueContext {
 }
 
 // ============================================================
-// TODO: 在这里填写你的 prompt，用于指导 agent 如何分诊 issue
+// Triage prompt — 从 prompts/triage.md 读取，不提交到 Git
 // ============================================================
-export const TRIAGE_PROMPT = `
-你是一个 Linear issue 分诊助手。根据 issue 的标题和描述，判断缺失的字段。
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROMPT_PATH = resolve(__dirname, "../../prompts/triage.md");
 
-**只需要判断标记为"需要判断"的字段，已有的字段请忽略。**
-
-判断规则：
-1. **分配负责人**：根据成员专长匹配最合适的人
-2. **评判优先级**：
-   - 1 = 紧急（系统崩溃、数据丢失、安全漏洞）
-   - 2 = 高（核心功能 bug、阻塞其他人）
-   - 3 = 中（一般 bug、功能改进）
-   - 4 = 低（优化、文档、美化）
-   - 0 = 无法判断
-3. **添加标签**：从可用标签中选择合适的标签
-
-团队成员专长：
-（请在下方补充每个成员的专长描述）
-
----
-
-请以 JSON 格式回复，只包含需要判断的字段：
-{
-  "assigneeId": "成员ID 或 null（仅当需要判断时）",
-  "priority": 数字(0-4)（仅当需要判断时）,
-  "labelIds": ["标签ID", ...]（仅当需要判断时）,
-  "reason": "判断理由"
+function loadTriagePrompt(): string {
+  try {
+    return readFileSync(PROMPT_PATH, "utf-8").trim();
+  } catch {
+    throw new Error(
+      `Triage prompt not found at ${PROMPT_PATH}. Please create prompts/triage.md`,
+    );
+  }
 }
-`;
 
 /**
  * Issue 分诊器 — 收集上下文，调用 agent 分析，执行分配
@@ -102,7 +89,7 @@ export class IssueTriage {
   ) {
     this.getToken = getToken;
     this.logger = logger;
-    this.triagePrompt = opts?.triagePrompt ?? TRIAGE_PROMPT;
+    this.triagePrompt = opts?.triagePrompt ?? loadTriagePrompt();
     this.excludeUserId = opts?.excludeUserId;
   }
 

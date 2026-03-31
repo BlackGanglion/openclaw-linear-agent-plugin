@@ -137,8 +137,9 @@ export default definePluginEntry({
           sessionKey: `triage-${issueId}`,
           prompt,
           systemPrompt:
-            "你是一个 Linear issue 分诊助手。只输出 JSON 结果，不要输出其他内容。",
+            "You are a Linear issue triage assistant. Output ONLY the JSON result, no other text.",
           workspaceDir: config.defaultDir,
+          runEmbeddedPiAgent: api.runtime.agent.runEmbeddedPiAgent,
           logger,
         });
 
