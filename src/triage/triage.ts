@@ -51,11 +51,40 @@ function createModel(config: LLMConfig): Model<"openai-completions"> {
     provider: "custom",
     baseUrl: config.baseUrl,
     reasoning: false,
-    input: ["text"],
+    input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 131072,
     maxTokens: 8192,
   };
+}
+
+// --- Image utilities ---
+
+/** Extract image URLs from markdown content */
+function extractImageUrls(markdown: string): string[] {
+  const regex = /!\[.*?\]\((https?:\/\/[^\s)]+)\)/g;
+  const urls: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(markdown)) !== null) {
+    if (match[1]) urls.push(match[1]);
+  }
+  return urls;
+}
+
+/** Download an image and return base64 data with mime type */
+async function downloadImageAsBase64(
+  url: string,
+): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const contentType = response.headers.get("content-type") ?? "image/png";
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+    return { data: base64, mimeType: contentType };
+  } catch {
+    return null;
+  }
 }
 
 // --- Triage ---
@@ -208,15 +237,36 @@ export class IssueTriage {
   async runTriage(context: IssueContext): Promise<TriageResult | null> {
     const userPrompt = this.buildPrompt(context);
 
+    // Extract and download images from description
+    const imageUrls = extractImageUrls(context.description);
+    const images: Array<{ type: "image"; mimeType: string; data: string }> = [];
+    if (imageUrls.length > 0) {
+      this.logger.info(
+        `Triage ${context.identifier}: downloading ${imageUrls.length} image(s)`,
+      );
+      const results = await Promise.all(
+        imageUrls.map((url) => downloadImageAsBase64(url)),
+      );
+      for (const result of results) {
+        if (result) {
+          images.push({ type: "image", mimeType: result.mimeType, data: result.data });
+        }
+      }
+    }
+
     this.logger.info(
       `Triage ${context.identifier}: calling ${this.llmConfig.model}`,
     );
+
+    // Build message content: text + images
+    const content: Array<{ type: "text"; text: string } | { type: "image"; mimeType: string; data: string }> =
+      [{ type: "text", text: userPrompt }, ...images];
 
     try {
       const response = await complete(this.model, {
         systemPrompt: this.triagePrompt,
         messages: [
-          { role: "user", content: userPrompt, timestamp: Date.now() },
+          { role: "user", content, timestamp: Date.now() },
         ],
       }, {
         apiKey: this.llmConfig.apiKey,
