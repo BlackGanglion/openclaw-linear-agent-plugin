@@ -16,6 +16,7 @@ export interface IssueContext {
   teamMembers: Array<{ id: string; name: string; displayName: string }>;
   availableLabels: Array<{ id: string; name: string }>;
   workflowStates: Array<{ id: string; name: string; type: string }>;
+  currentState?: { id: string; name: string; type: string };
   existing: {
     hasAssignee: boolean;
     assigneeName?: string;
@@ -27,6 +28,7 @@ export interface IssueContext {
 }
 
 export interface TriageResult {
+  shouldTriage: boolean;
   assigneeId: string | null;
   priority: number;
   labelIds: string[];
@@ -81,7 +83,7 @@ export class IssueTriage {
 
   /** Collect issue context from Linear */
   async collectContext(issueId: string): Promise<IssueContext | null> {
-    const { issue, team, assignee, labels } =
+    const { issue, state, team, assignee, labels } =
       await this.linearClient.getIssue(issueId);
 
     if (!team) {
@@ -113,6 +115,9 @@ export class IssueTriage {
       title: issue.title,
       description: issue.description ?? "",
       teamName: team.name,
+      currentState: state
+        ? { id: state.id, name: state.name, type: state.type }
+        : undefined,
       teamMembers: teamMembers
         .filter((m) => m.id !== this.excludeUserId)
         .map((m) => ({
@@ -256,6 +261,7 @@ export class IssueTriage {
     try {
       const p = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
       return {
+        shouldTriage: p["shouldTriage"] !== false,
         assigneeId:
           typeof p["assigneeId"] === "string" ? p["assigneeId"] : null,
         priority:
@@ -289,6 +295,16 @@ export class IssueTriage {
       update["labelIds"] = result.labelIds;
     }
 
+    // If current state is triage, move to backlog
+    if (context.currentState?.type === "triage") {
+      const backlogState = context.workflowStates.find(
+        (s) => s.type === "backlog",
+      );
+      if (backlogState) {
+        update["stateId"] = backlogState.id;
+      }
+    }
+
     if (Object.keys(update).length > 0) {
       await this.linearClient.updateIssue(issueId, update);
       this.logger.info(
@@ -299,7 +315,7 @@ export class IssueTriage {
     if (result.reason) {
       await this.linearClient.createComment(
         issueId,
-        `🤖 **Auto-triage**\n\n${result.reason}`,
+        `${result.reason}`,
       );
     }
   }
@@ -312,6 +328,13 @@ export class IssueTriage {
 
       const result = await this.runTriage(context);
       if (!result) return;
+
+      if (!result.shouldTriage) {
+        this.logger.info(
+          `Triage ${context.identifier}: LLM determined not eligible for auto-triage, skipping`,
+        );
+        return;
+      }
 
       await this.applyResult(issueId, result, context);
       this.logger.info(`Triage ${context.identifier}: done`);

@@ -64,6 +64,7 @@ export class LinearApiClient {
       assigneeId?: string;
       priority?: number;
       labelIds?: string[];
+      stateId?: string;
     },
   ) {
     const client = await this.ensure();
