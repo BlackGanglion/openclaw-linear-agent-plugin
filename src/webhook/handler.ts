@@ -19,19 +19,11 @@ export function createWebhookHandler(
   const handler = client.createHandler();
 
   handler.on("Issue", (payload) => {
-    logger.info(
-      `Issue event: action=${payload.action} id=${payload.data.id} title=${payload.data.title}`,
-    );
-    if (payload.action === "create" && callbacks.onIssueCreated) {
-      callbacks.onIssueCreated(payload);
-    }
-  });
-
-  handler.on("*", (payload) => {
-    if (payload.type !== "Issue") {
+    if (payload.action === "create") {
       logger.info(
-        `Webhook: type=${payload.type} action=${String((payload as Record<string, unknown>)["action"] ?? "")}`,
+        `Issue created: id=${payload.data.id} title=${payload.data.title}`,
       );
+      callbacks.onIssueCreated?.(payload);
     }
   });
 

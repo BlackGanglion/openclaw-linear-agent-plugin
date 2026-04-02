@@ -26,7 +26,7 @@ const oauthConfig: OAuthConfig = {
 // --- Token provider ---
 
 async function getToken(): Promise<string> {
-  const result = await getAccessToken(oauthConfig, logger);
+  const result = await getAccessToken(oauthConfig);
   if (!result) {
     throw new Error(
       "No valid OAuth token. Please authorize first via /oauth/authorize",
@@ -36,7 +36,7 @@ async function getToken(): Promise<string> {
 }
 
 async function getAgentId(): Promise<string | null> {
-  const result = await getAccessToken(oauthConfig, logger);
+  const result = await getAccessToken(oauthConfig);
   return result?.agentId ?? null;
 }
 
@@ -80,7 +80,7 @@ const app = new Hono();
 app.get("/health", (c) => c.json({ ok: true }));
 
 app.get("/status", async (c) => {
-  const token = await getAccessToken(oauthConfig, logger);
+  const token = await getAccessToken(oauthConfig);
   return c.json({
     authorized: !!token,
     agentId: token?.agentId ?? null,
@@ -107,7 +107,7 @@ app.get("/oauth/callback", async (c) => {
     return c.html("<h1>Missing code or state parameter</h1>", 400);
   }
 
-  const result = await handleOAuthCallback(oauthConfig, code, state, logger);
+  const result = await handleOAuthCallback(oauthConfig, code, state);
   if (!result.success) {
     return c.html(
       `<h1>${result.title}</h1><p>${result.message}</p>`,
@@ -126,9 +126,6 @@ app.get("/oauth/callback", async (c) => {
 // Webhook — delegate to Linear SDK handler (Fetch API)
 
 app.post("/webhooks/linear", async (c) => {
-  const contentLength = c.req.header("content-length") ?? "unknown";
-  logger.info(`Webhook request received: content-length=${contentLength}`);
-
   // Check auth before processing
   const agentId = await getAgentId();
   if (!agentId) {
@@ -139,7 +136,6 @@ app.post("/webhooks/linear", async (c) => {
   }
 
   const response = await webhookHandler(c.req.raw);
-  logger.info(`Webhook handler responded: status=${response.status}`);
   return response;
 });
 

@@ -3,7 +3,16 @@ import { join } from "node:path";
 import type { PluginLogger } from "./webhook/logger-types";
 
 function timestamp(): string {
-  return new Date().toISOString();
+  return new Date().toLocaleString("sv-SE", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).replace(" ", "T");
 }
 
 export function createLogger(logDir: string): PluginLogger {
@@ -11,7 +20,7 @@ export function createLogger(logDir: string): PluginLogger {
 
   const logFile = join(
     logDir,
-    `${new Date().toISOString().slice(0, 10)}.log`,
+    `${new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" })}.log`,
   );
   const stream: WriteStream = createWriteStream(logFile, { flags: "a" });
 

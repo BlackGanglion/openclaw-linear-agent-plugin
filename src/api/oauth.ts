@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { PluginLogger } from "../webhook/logger-types";
+
 
 const LINEAR_AUTHORIZE_URL = "https://linear.app/oauth/authorize";
 const LINEAR_TOKEN_URL = "https://api.linear.app/oauth/token";
@@ -97,7 +97,6 @@ async function exchangeCode(
 
 export async function refreshToken(
   config: OAuthConfig,
-  logger: PluginLogger,
 ): Promise<TokenSet | null> {
   const existing = loadTokenSet(config.tokenStorePath);
   if (!existing?.refreshToken) return null;
@@ -116,15 +115,11 @@ export async function refreshToken(
   }).catch(() => null);
 
   if (!res || !res.ok) {
-    logger.warn(
-      `OAuth token refresh failed: ${res?.status ?? "network error"}`,
-    );
     return null;
   }
 
   const payload = (await res.json().catch(() => null)) as TokenResponse | null;
   if (!payload?.access_token) {
-    logger.warn("OAuth refresh: missing access_token in response");
     return null;
   }
 
@@ -144,7 +139,6 @@ export async function refreshToken(
   };
 
   saveTokenSet(config.tokenStorePath, updated);
-  logger.info("OAuth token refreshed successfully");
   return updated;
 }
 
@@ -167,7 +161,6 @@ async function resolveAgentId(accessToken: string): Promise<string> {
 
 export async function getAccessToken(
   config: OAuthConfig,
-  logger: PluginLogger,
 ): Promise<{ accessToken: string; agentId: string } | null> {
   const tokenSet = loadTokenSet(config.tokenStorePath);
   if (!tokenSet) return null;
@@ -177,8 +170,7 @@ export async function getAccessToken(
     const expiresAt = new Date(tokenSet.expiresAt).getTime();
     const buffer = 5 * 60 * 1000; // refresh 5 min before expiry
     if (Date.now() > expiresAt - buffer) {
-      logger.info("OAuth token near expiry, refreshing...");
-      const refreshed = await refreshToken(config, logger);
+      const refreshed = await refreshToken(config);
       if (refreshed) {
         return {
           accessToken: refreshed.accessToken,
@@ -224,11 +216,9 @@ export async function handleOAuthCallback(
   config: OAuthConfig,
   code: string,
   state: string,
-  logger: PluginLogger,
 ): Promise<OAuthCallbackResult> {
   // Validate state
   if (!validateState(state, config.webhookSecret)) {
-    logger.error("OAuth state validation failed");
     return {
       success: false,
       status: 403,
@@ -238,13 +228,11 @@ export async function handleOAuthCallback(
   }
 
   // Exchange code for token
-  logger.info("Exchanging OAuth code for token...");
   let payload: TokenResponse;
   try {
     payload = await exchangeCode(code, config);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.error(`Token exchange failed: ${msg}`);
     return {
       success: false,
       status: 500,
@@ -256,7 +244,6 @@ export async function handleOAuthCallback(
   if (payload.error || !payload.access_token) {
     const desc =
       payload.error_description ?? payload.error ?? "unknown error";
-    logger.error(`Token exchange error: ${desc}`);
     return {
       success: false,
       status: 400,
@@ -269,10 +256,7 @@ export async function handleOAuthCallback(
   let agentId = "";
   try {
     agentId = await resolveAgentId(payload.access_token);
-    logger.info(`Resolved agent ID: ${agentId}`);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.warn(`Failed to resolve agent ID: ${msg}`);
+  } catch {
   }
 
   // Save token
@@ -291,7 +275,6 @@ export async function handleOAuthCallback(
     updatedAt: now.toISOString(),
   };
   saveTokenSet(config.tokenStorePath, tokenSet);
-  logger.info("OAuth tokens saved successfully");
 
   return { success: true, agentId, expiresAt: tokenSet.expiresAt };
 }
