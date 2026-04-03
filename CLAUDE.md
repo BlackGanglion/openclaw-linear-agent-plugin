@@ -39,6 +39,11 @@ npm test           # vitest run
 - `test/triage.test.ts` — 集成测试，mock Linear API，真实调用 LLM
 - 需要 `.env` 中配置 `LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_KEY`
 - 测试涉及真实 LLM 调用，不要自动运行，需要时向用户申请
+- 只跑 `test/` 目录下的测试（`npx vitest run test/`），不要跑 `cc-origin/` 里的测试
+
+## 参考代码
+
+- `cc-origin/` — 仅用于参考，不要修改或运行其中的代码和测试
 
 ## 环境变量
 

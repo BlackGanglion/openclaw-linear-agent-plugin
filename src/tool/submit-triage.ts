@@ -4,8 +4,6 @@ import type { LinearApiClient } from "../linear/client";
 import type { IssueContext, TriageResult } from "../triage/triage";
 import type { PluginLogger } from "../webhook/logger-types";
 
-export const SUBMIT_TRIAGE_TOOL_NAME = "submit_triage_result";
-
 const submitTriageParameters = Type.Object({
   shouldTriage: Type.Boolean({
     description:
@@ -28,13 +26,29 @@ const submitTriageParameters = Type.Object({
   }),
 });
 
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  { maxRetries = 3, baseDelayMs = 1000 } = {},
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      const delay = baseDelayMs * 2 ** (attempt - 1);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error("unreachable");
+}
+
 export function createSubmitTriageTool(
   linearClient: LinearApiClient,
   context: IssueContext,
   logger: PluginLogger,
 ): AgentTool {
   return {
-    name: SUBMIT_TRIAGE_TOOL_NAME,
+    name: "submit_triage_result",
     label: "Submit Triage Result",
     description:
       "提交最终的 issue 分诊结果。分析完成后必须调用此工具提交判断。",
@@ -89,11 +103,11 @@ export function createSubmitTriageTool(
       }
 
       if (Object.keys(update).length > 0) {
-        await linearClient.updateIssue(context.issueId, update);
+        await withRetry(() => linearClient.updateIssue(context.issueId, update));
       }
 
       if (result.reason) {
-        await linearClient.createComment(context.issueId, result.reason);
+        await withRetry(() => linearClient.createComment(context.issueId, result.reason));
       }
 
       return {

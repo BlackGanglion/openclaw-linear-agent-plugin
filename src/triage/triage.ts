@@ -278,32 +278,11 @@ export class IssueTriage {
     await agent.prompt(userPrompt, images.length > 0 ? images : undefined);
   }
 
-  /** Full triage flow: collect -> LLM -> apply (with retry) */
-  async triageIssue(
-    issueId: string,
-    { maxRetries = 3, baseDelayMs = 1000 } = {},
-  ): Promise<void> {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const context = await this.collectContext(issueId);
-        if (!context) return;
+  /** Full triage flow: collect -> LLM -> apply */
+  async triageIssue(issueId: string): Promise<void> {
+    const context = await this.collectContext(issueId);
+    if (!context) return;
 
-        await this.runTriage(context);
-        return;
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (attempt < maxRetries) {
-          const delay = baseDelayMs * 2 ** (attempt - 1);
-          this.logger.warn(
-            `Triage failed for ${issueId} (attempt ${attempt}/${maxRetries}): ${msg}, retrying in ${delay}ms`,
-          );
-          await new Promise((r) => setTimeout(r, delay));
-        } else {
-          this.logger.error(
-            `Triage failed for ${issueId} after ${maxRetries} attempts: ${msg}`,
-          );
-        }
-      }
-    }
+    await this.runTriage(context);
   }
 }
