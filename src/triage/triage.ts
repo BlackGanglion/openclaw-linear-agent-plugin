@@ -4,7 +4,8 @@ import type { Model } from "@mariozechner/pi-ai";
 import { Agent } from "@mariozechner/pi-agent-core";
 import type { LinearApiClient } from "../linear/client";
 import type { PluginLogger } from "../webhook/logger-types";
-import { fetchTraceTool, createSubmitTriageTool } from "../tool/registry";
+import { fetchTraceTool } from "../tool/fetch-trace";
+import { createSubmitTriageTool } from "../tool/submit-triage";
 
 // --- Types ---
 
