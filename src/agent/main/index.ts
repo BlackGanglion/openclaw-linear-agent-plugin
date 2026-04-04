@@ -1,13 +1,15 @@
+import { resolve } from "node:path";
 import type { Model } from "@mariozechner/pi-ai";
 import { Agent } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { LinearApiClient } from "../../infra/linear/client";
 import type { AgentSessionEventWebhookPayload } from "@linear/sdk";
-// TODO: 后续注册 tools 时启用
-// import type { AgentRegistry } from "../registry";
 import type { LLMConfig } from "../sub/linear-triage/triage";
 import type { Logger } from "../../utils/logger";
 import { loadPrompt } from "../../utils/prompt-loader";
 import { withRetry } from "../../utils/retry";
+import type { AgentRegistry } from "../registry";
+import { createRead } from "../tool/read";
 
 function createModel(config: LLMConfig): Model<"openai-completions"> {
   return {
@@ -27,18 +29,20 @@ function createModel(config: LLMConfig): Model<"openai-completions"> {
 export class MainAgent {
   private model: Model<"openai-completions">;
   private getSystemPrompt: () => string;
+  private tools: AgentTool[];
   /** Track active sessions so we can abort on "stopped" */
   private activeSessions = new Map<string, AbortController>();
 
   constructor(
     private readonly linearClient: LinearApiClient,
-    // TODO: 后续注册 tools 时启用
-    // private readonly registry: AgentRegistry,
+    private readonly registry: AgentRegistry,
     private readonly llmConfig: LLMConfig,
     private readonly logger: Logger,
   ) {
     this.model = createModel(llmConfig);
     this.getSystemPrompt = loadPrompt("main-agent.md");
+    const promptsDir = resolve(process.cwd(), "prompts");
+    this.tools = [createRead(promptsDir), ...this.registry.asTools()];
   }
 
   async handleSessionEvent(payload: AgentSessionEventWebhookPayload): Promise<void> {
@@ -72,7 +76,7 @@ export class MainAgent {
     await withRetry(() =>
       this.linearClient.createAgentActivity({
         agentSessionId: sessionId,
-        content: { type: "thought", body: "egg 的 CPU 正在疯狂旋转..." },
+        content: { type: "thought", body: "Egg 的 token 正在疯狂燃烧..." },
       }),
     );
 
@@ -88,7 +92,7 @@ export class MainAgent {
         initialState: {
           systemPrompt: this.getSystemPrompt(),
           model: this.model,
-          // tools: this.registry.asTools(),
+          tools: this.tools,
         },
         getApiKey: async () => this.llmConfig.apiKey,
         toolExecution: "sequential",
@@ -108,7 +112,8 @@ export class MainAgent {
           }
         }
         if (event.type === "tool_execution_end" && event.isError) {
-          this.logger.warn(`Session ${sessionId}: tool ${event.toolName} error`);
+          const detail = JSON.stringify(event.result);
+          this.logger.warn(`Session ${sessionId}: tool ${event.toolName} error: ${detail}`);
         }
       });
 

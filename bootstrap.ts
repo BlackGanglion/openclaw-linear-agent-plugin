@@ -61,7 +61,7 @@ registry.register(
 
 // --- Main agent ---
 
-const mainAgent = new MainAgent(linearClient, llmConfig, logger);
+const mainAgent = new MainAgent(linearClient, registry, llmConfig, logger);
 
 // --- Hono app ---
 

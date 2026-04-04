@@ -258,11 +258,12 @@ export class IssueTriage {
       toolExecution: "sequential",
     });
 
-    // Log tool errors only
+    // Log tool errors
     agent.subscribe((event) => {
       if (event.type === "tool_execution_end" && event.isError) {
+        const detail = JSON.stringify(event.result);
         this.logger.warn(
-          `Triage ${context.identifier}: tool ${event.toolName} error`,
+          `Triage ${context.identifier}: tool ${event.toolName} error: ${detail}`,
         );
       }
     });

@@ -14,6 +14,7 @@
     "@linear/sdk": "^80.0.0",
     "@mariozechner/pi-agent-core": "^0.64.0",
     "@mariozechner/pi-ai": "^0.64.0",
+    "@mariozechner/pi-coding-agent": "^0.64.0",
     "dotenv": "^16.5.0",
     "hono": "^4.7.0"
   },
