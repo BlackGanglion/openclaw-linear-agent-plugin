@@ -1,11 +1,10 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Model } from "@mariozechner/pi-ai";
 import { Agent } from "@mariozechner/pi-agent-core";
 import type { LinearApiClient } from "../../../infra/linear/client";
 import type { Logger } from "../../../utils/logger";
 import { fetchTraceTool } from "../../tool/fetch-trace";
 import { createSubmitTriageTool } from "../../tool/submit-triage";
+import { loadPrompt } from "../../../utils/prompt-loader";
 
 // --- Types ---
 
@@ -92,7 +91,7 @@ async function downloadImageAsBase64(
 // --- Triage ---
 
 export class IssueTriage {
-  private triagePrompt: string;
+  private getTriagePrompt: () => string;
   private model: Model<"openai-completions">;
 
   constructor(
@@ -102,14 +101,7 @@ export class IssueTriage {
     private readonly excludeUserId?: string,
   ) {
     this.model = createModel(llmConfig);
-
-    const promptPath = join(process.cwd(), "prompts", "triage.md");
-    try {
-      this.triagePrompt = readFileSync(promptPath, "utf-8");
-    } catch {
-      logger.error(`Failed to load triage prompt from ${promptPath}`);
-      this.triagePrompt = "";
-    }
+    this.getTriagePrompt = loadPrompt("triage.md");
   }
 
   /** Collect issue context from Linear */
@@ -258,7 +250,7 @@ export class IssueTriage {
 
     const agent = new Agent({
       initialState: {
-        systemPrompt: this.triagePrompt,
+        systemPrompt: this.getTriagePrompt(),
         model: this.model,
         tools: [fetchTraceTool, submitTool],
       },
