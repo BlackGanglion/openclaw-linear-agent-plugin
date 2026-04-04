@@ -7,6 +7,7 @@ import type { AgentSessionEventWebhookPayload } from "@linear/sdk";
 import type { LLMConfig } from "../sub/linear-triage/triage";
 import type { Logger } from "../../utils/logger";
 import { loadPrompt } from "../../utils/prompt-loader";
+import { withRetry } from "../../utils/retry";
 
 function createModel(config: LLMConfig): Model<"openai-completions"> {
   return {
@@ -68,10 +69,12 @@ export class MainAgent {
     const sessionId = payload.agentSession.id;
 
     // Send thought immediately (must respond within 10 seconds)
-    await this.linearClient.createAgentActivity({
-      agentSessionId: sessionId,
-      content: { type: "thought", body: "egg 的 CPU 正在疯狂旋转..." },
-    });
+    await withRetry(() =>
+      this.linearClient.createAgentActivity({
+        agentSessionId: sessionId,
+        content: { type: "thought", body: "egg 的 CPU 正在疯狂旋转..." },
+      }),
+    );
 
     // 构建 prompt
     const prompt = await this.buildPrompt(payload);
@@ -112,22 +115,30 @@ export class MainAgent {
       await agent.prompt(prompt);
 
       // Send final response
-      await this.linearClient.createAgentActivity({
-        agentSessionId: sessionId,
-        content: {
-          type: "response",
-          body: responseText || "处理完成，但没有生成回复内容。",
-        },
-      });
+      await withRetry(() =>
+        this.linearClient.createAgentActivity({
+          agentSessionId: sessionId,
+          content: {
+            type: "response",
+            body: responseText || "处理完成，但没有生成回复内容。",
+          },
+        }),
+      );
     } catch (err: unknown) {
       if (controller.signal.aborted) return;
 
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Session ${sessionId} error: ${msg}`);
-      await this.linearClient.createAgentActivity({
-        agentSessionId: sessionId,
-        content: { type: "error", body: `处理出错：${msg}` },
-      });
+      try {
+        await withRetry(() =>
+          this.linearClient.createAgentActivity({
+            agentSessionId: sessionId,
+            content: { type: "error", body: `处理出错：${msg}` },
+          }),
+        );
+      } catch {
+        this.logger.error(`Session ${sessionId}: failed to send error activity`);
+      }
     } finally {
       this.activeSessions.delete(sessionId);
     }
