@@ -22,6 +22,11 @@ npm install
 cp .env.example .env
 # 编辑 .env 填入凭证
 npm run dev
+
+# 通过 Tailscale Funnel 暴露本地服务（后台模式）
+tailscale funnel --bg 3000
+# 验证 Funnel 正在运行
+tailscale serve status
 ```
 
 ## 配置

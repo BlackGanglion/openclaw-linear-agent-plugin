@@ -22,6 +22,11 @@ npm install
 cp .env.example .env
 # Edit .env with your credentials
 npm run dev
+
+# Expose local server via Tailscale Funnel (background mode)
+tailscale funnel --bg 3000
+# Verify funnel is running
+tailscale serve status
 ```
 
 ## Configuration
